@@ -1,0 +1,31 @@
+---
+  #region Get Last Free Drive Letter
+  - name: Get Last Free Drive Letter
+    win_shell: '[int]$(((68..90 | foreach-object{$L=[char]$_; if ((Get-PSDrive).Name -notContains $L) {$L}}) | Sort-Object -Descending)[0])'
+    register: lastfreedriveletter_shell_result
+    failed_when: lastfreedriveletter_shell_result.rc != 0
+  #endregion Get Last Free Drive Letter
+
+  - name: Set Fact - Convert PowerShell Last Free Drive Letter Int
+    set_fact:
+      freedriveint: "{{lastfreedriveletter_shell_result.stdout_lines | first | int}}"
+
+  - name: Print Last Free Drive Letter Int
+    debug: msg="{{freedriveint}}"
+  
+  - name: Print Drive Letter Int Var
+    debug: msg="{{driveint}}"
+  
+  - name: Print Drive Letter Int Var
+    debug: msg="{{deviceid}}"
+
+  #region Set All DVD Drives to end of Alaphabet
+  - name: Set All DVD Drives to end of Alaphabet
+    win_shell: 'Get-Wmiobject -class win32_volume -filter "DriveType = 5" | where {$_.deviceid -eq "{{deviceid}}"} | foreach-object {Set-wmiinstance -inputobject $_ -arguments @{DriveLetter="$(((68..90 | foreach-object{$L=[char]$_; if ((Get-PSDrive).Name -notContains $L) {$L}}) | Sort-Object -Descending)[0]):"}} | convertto-json'
+    register: setdvddrives_shell_result
+    failed_when: setdvddrives_shell_result.rc != 0
+    when: driveint < freedriveint
+  #endregion Set All DVD Drives to end of Alaphabet
+
+#Set CD drive to Z:
+#Get-Wmiobject -class win32_volume -filter 'DriveType = 5' | foreach-object {Set-wmiinstance -inputobject $_ -arguments @{DriveLetter='$(((68..90 | %{$L=[char]$_; if ((gdr).Name -notContains $L) {$L}}) | sort -Descending)[0]):'}

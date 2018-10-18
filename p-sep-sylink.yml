@@ -1,0 +1,74 @@
+---
+- name: Configure Symantec Endpoint Protection
+  hosts: all
+  vars:
+    # it is suggested that these be encrypted with ansible-vault:
+    # ansible-vault edit group_vars/windows.yml
+    ansible_ssh_port: 5985
+    #ansible_winrm_kerberos_delegation: true
+    ansible_winrm_transport: basic
+    ansible_connection: winrm
+    ansible_ssh_user: 'Administrator'
+    ansible_ssh_pass: 'Worldpay1'
+    domain: 'worldpaytd'
+  tasks:
+
+  - name: test
+    debug: msg="{{ ansible_distribution }}-{{ ansible_distribution_major_version}}"
+
+  #region Set Device Type - Server
+  - name: Set Device Type - Server
+    set_fact:
+      device_type: "Server"
+    when: '"Server" in ansible_distribution'
+  #endregion Set Device Type - Server
+
+  #region Set Device Type - Desktop
+  - name: Set Device Type - Desktop
+    set_fact:
+      device_type: "Desktop"
+    when: '"Server" not in ansible_distribution ' 
+  #endregion Set Device Type - Desktop
+
+  #region check SEP is configured to use SYLink
+  - name: Get SEP SYLINK Registry Key
+    win_reg_stat:
+      path: 'HKLM:\SOFTWARE\WOW6432Node\Symantec\Symantec Endpoint Protection\SMC\SYLINK\SyLink'
+    register: sep_sylink_p1
+
+  - name: Query SEP SyLink Key for PendingOpState Key - Initial Check
+    set_fact: 
+      json_q_p1: "{{sep_sylink_p1 | to_json | from_json  | json_query(\"sub_keys[?contains(@, 'PendingOpState') == `true`] \") | string}}"
+  
+  - name: print sep_link fact
+    debug:
+      var: json_q_p1
+    when: '"PendingOpState" in json_q_p1'
+  #region check SEP is configured to use SYLink
+
+  #region configure SEP to use SYlink
+  - name: Run SyLink Config Tool
+    win_shell: "c:\\windows\\custom\\sylinkdrop.exe -silent c:\\windows\\custom\\{{domain}}-VM-{{device_type}}-Sylink.xml"
+    when: '"PendingOpState" in json_q_p1'
+    register: sylink_shell_result
+    failed_when: sylink_shell_result.rc != 0
+  #endregion configure SEP to use SYlink
+  
+  #region check SEP is configured to use SYLink
+  - name: Get SEP SYLINK
+    win_reg_stat:
+      path: 'HKLM:\SOFTWARE\WOW6432Node\Symantec\Symantec Endpoint Protection\SMC\SYLINK\SyLink'
+    register: sep_sylink_p2
+    when: '"PendingOpState" in json_q_p1'
+
+  - name: Query SEP SyLink Key for PendingOpState Key
+    set_fact:
+      json_q_p2: "{{sep_sylink_p2 | to_json | from_json  | json_query(\"sub_keys[?contains(@, 'PendingOpState') == `true`] \") | string}}"
+    when: sep_sylink_p2 is defined
+ 
+  - name: print sep_link fact
+    debug: 
+      var: json_q_p2
+    when: json_q_p2 is defined
+    #failed_when: '"PendingOpState" in json_q_p2'
+  #region check SEP is configured to use SYLink

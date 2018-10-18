@@ -1,0 +1,75 @@
+---
+    - name: Create Timestamp Fact
+      set_fact:
+        stamp: "{{lookup('pipe','date \"+%Y%m%d_%H%M%S\"')}}"
+
+    - name: Add Powershell Command Line to VMware Shell Wrapper Text
+      set_fact:
+        pwsh_command_full: "-command \"& {start-transcript c:\\windows\\temp\\pwsh_vmware_vm_shell_{{stamp}}.log; $utf8 = New-Object System.Text.UTF8Encoding($False); {{ pwsh_command }}  ;$return = $return | convertto-json;$return;$jsonpath = 'c:\\windows\\temp\\pwsh_vmware_vm_shell_{{stamp}}.json'; [System.IO.File]::WriteAllLines($jsonpath, $return, $utf8)}\""
+
+    - name: Print Full Powershell Command Line
+      debug: 
+        var: pwsh_command_full
+
+#    - name: Find VM
+#      vmware_guest_find:
+#        hostname: "{{ vCenter_FQDN }}"
+#        username: "{{ vCenter_UserName }}"
+#        password: "{{ vCenter_Password }}"
+#        validate_certs: no
+#        datacenter: "{{ datacenter }}"
+#        name: "{{ vm_name }}"
+#      register: vm_folder
+
+#    - name: display found vm    
+#      debug: msg="{{vm_folder.folders | first}}"
+            
+    - name: Run Powershell Command Return as JSON
+      vmware_vm_shell:
+        hostname: "{{vCenter_FQDN}}"
+        username: "{{vCenter_UserName}}"
+        password: "{{vCenter_Password}}"
+        validate_certs: no
+        folder: "{{vm_folder}}"
+        vm_id: "{{vm_name}}"
+        vm_username: "{{vm_username}}"
+        vm_password: "{{vm_password}}"
+        vm_shell: 'c:\windows\system32\windowspowershell\v1.0\powershell.exe'
+        vm_shell_args: "{{pwsh_command_full}}"
+      
+    #- pause:
+    #    seconds: "{{pwsh_wait}}"
+
+    - name: Get Powershell Return JSON File
+      vmware_guest_file_operation:
+        hostname: "{{vCenter_FQDN}}"
+        username: "{{vCenter_UserName}}"
+        password: "{{vCenter_Password}}"
+        validate_certs: no
+        folder: "{{vm_folder}}"
+        vm_id: "{{vm_name}}"
+        vm_username: "{{vm_username}}"
+        vm_password: "{{vm_password}}"
+        fetch:
+            src: 'c:\windows\temp\pwsh_vmware_vm_shell_{{stamp}}.json'
+            dest: "{{json_name}}.json" 
+      register: pwsh_output
+      until: task_result.rc == 0
+      retries: 10
+      delay: 1
+      ignore_errors: yes
+
+       
+    - name: display pwsh_output    
+      debug: 
+        var: pwsh_output
+        verbosity: 4
+
+    - name: Set Json Return object
+      set_fact:
+        json: "{{ lookup('file','{{json_name}}.json') | from_json}}"
+
+    - name: Print Powershell Result JSON
+      debug: 
+        var: json
+        verbosity: 4

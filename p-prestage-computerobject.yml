@@ -1,0 +1,60 @@
+---
+- name: Create Prestaged Domain Computer Object
+  hosts: all
+  gather_facts: no
+  tasks:
+
+  #connect directly to the domain controller add dns records
+
+  #region Check if computer already Exists in Domain
+  - name: Check is the Computer already exists in Domain
+    win_shell: "try{get-adcomputer -Identity {{computername}}} catch{}"
+    #when: '"PendingOpState" in json_q_p1'
+    register: getadcomputer_shell_result
+    ignore_errors: yes
+    #failed_when: getadcomputer_shell_result.rc != 0 or getadcomputer_shell_result.rc != 1
+  #endregion Check if computer already Exists in Domain
+
+  #Remove-ADComputer -Identity uk2tsnd10295 -Confirm:$false
+  #region Check if computer already Exists in Domain
+  - name: Check is the Computer already exists in Domain
+    win_shell: 'Remove-ADComputer -Identity {{computername}} -Confirm:$false'
+    #when: '"PendingOpState" in json_q_p1'
+    register: removeadcomputer_shell_result
+    ignore_errors: yes
+    when: getadcomputer_shell_result.rc == 0
+    #region Check if computer already Exists in Domain
+
+  #region Check OU with Name Exists
+  - name: Create a Computer object in Domain
+    win_shell: "$(Get-ADOrganizationalUnit -Filter 'Name -eq \"{{ou}}\"').DistinguishedName"
+    #win_shell: "New-ADComputer -Name {{computername}} -Path $(Get-ADOrganizationalUnit -Filter 'Name -eq \\\"{{ou}}\\\"').DistinguishedName"
+    register: getadorganizationalunit_shell_result
+    when: getadcomputer_shell_result.rc == 1 or removeadcomputer_shell_result.rc == 0
+    #failed_when: sylink_shell_result.rc != 0
+  #endregion Check OU with Name Exists
+
+  - name: set ou_path fact
+    set_fact:
+      ou_path: "{{getadorganizationalunit_shell_result.stdout_lines | first }}"
+    when: getadorganizationalunit_shell_result is defined
+
+  #region Create a Computer object in Domain
+  - name: Create a Computer object in Domain
+    win_shell: "New-ADComputer -Name \"{{computername}}\" -Path \"{{ou_path}}\""
+    #win_shell: "New-ADComputer -Name {{computername}} -Path $(Get-ADOrganizationalUnit -Filter 'Name -eq \\\"{{ou}}\\\"').DistinguishedName"
+    register: newadcomputer_shell_result
+    when: getadcomputer_shell_result.rc == 1 or removeadcomputer_shell_result.rc == 0
+    #failed_when: sylink_shell_result.rc != 0
+  #endregion Create a Computer object in Domain
+
+
+
+  #region Check is computer has been successfully created in Domain
+  #- name: Check is the Computer already exists in Domain
+  #  win_shell: "try{get-adcomputer -Identity {{computername}}} catch{}"
+    #when: '"PendingOpState" in json_q_p1'
+  #  register: getadcomputer_shell_result
+    #failed_when: sylink_shell_result.rc != 0
+  #endregion Check is computer has been successfully created in Domain
+

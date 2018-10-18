@@ -1,0 +1,37 @@
+---
+- name: Set DVD Drives to end of Alaphabet
+  hosts: all
+  gather_facts: False
+  tasks:
+
+  #region Get All DVD Drives
+  - name: Get All DVD Drives
+    win_shell: '$ar=@();Get-Wmiobject -class win32_volume -filter "DriveType = 5" | select driveletter, deviceid | % {[char]$a=$(($_.driveletter).toUpper() -replace ":","").trim();$ar += @{driveletter=$($_.driveletter -replace ":","");letterint=[int]$a;deviceid=$_.deviceid}};$ar |ConvertTo-Json'
+    register: getdvddrives_shell_result
+    failed_when: getdvddrives_shell_result.rc != 0
+  #endregion Get All DVD Drives
+
+  - name: Set Fact - Convert Powershell Output to JSON
+    set_fact: 
+      drives: "{{getdvddrives_shell_result.stdout | from_json }}"
+
+  #'- name: Set Fact 
+  #  set_fact:
+  #    driveint: "{{drives.letterint | int}}"
+
+  - name: Print Drives Fact
+    debug: msg="{{drives}}"
+
+  #- name: Print Drive In Fact
+  #  debug: msg="{{driveint}}"
+
+  #region Set Network Card - South - DNS Client Server Address
+  - name: Set Network Card - South - DNS Client Server Address
+    include_role:
+      name: cdrom_driveletter
+    vars: 
+      driveint: "{{item.letterint | int}}"
+      deviceid: "{{item.deviceid}}"
+    with_items: "{{ drives }}"
+
+    #endregion Set Network Card - South - DNS Client Server Address

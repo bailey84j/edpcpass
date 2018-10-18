@@ -1,0 +1,289 @@
+---
+- name: get and set network attributes
+  hosts: localhost
+
+  gather_facts: False
+  tasks:
+  #region Gather facts from standalone ESXi server having datacenter as 'ha-datacenter'
+  - name: Gather facts from standalone ESXi server having datacenter as 'ha-datacenter'
+    vmware_guest_facts:
+      hostname: "{{vCenter_FQDN}}"
+      username: "{{vCenter_UserName}}"
+      password: "{{vCenter_Password}}"
+      datacenter: "{{datacenter}}"
+      folder: "{{vm_folder}}"
+      name: "{{vm_name}}"
+      validate_certs: no
+    register: facts
+  #endregion Gather facts from standalone ESXi server having datacenter as 'ha-datacenter'
+  #region Get Mac Addresses using Worldpay NiC logic
+  #region south only
+  - name: When south Exists
+    set_fact:
+      southmac: "{{facts.instance.hw_eth0.macaddress_dash}}"
+      southmetric: 1
+    when: mgtip is undefined and southip is defined and dmzip is undefined and bkpip is undefined
+  #endregion south only
+  #region mgt and south
+  - name: When mgt and south Exists
+    set_fact:
+      mgtmac: "{{facts.instance.hw_eth0.macaddress_dash}}" 
+      southmac: "{{facts.instance.hw_eth1.macaddress_dash}}"
+      mgtmetric: 10
+      southmetric: 1
+    when: mgtip is defined and southip is defined and dmzip is undefined and bkpip is undefined
+  #endregion mgt and south
+  #region mgt south and dmz
+  - name: When mgt south and dmz Exists
+    set_fact:
+      mgtmac: "{{facts.instance.hw_eth0.macaddress_dash}}"
+      southmac: "{{facts.instance.hw_eth1.macaddress_dash}}"
+      dmzmac: "{{facts.instance.hw_eth2.macaddress_dash}}"
+      dmzmetric: 10
+      mgtmetric: 20
+      southmetric: 1
+    when: mgtip is defined and southip is defined and dmzip is defined and bkpip is undefined
+  #endregion mgt south and dmz
+  #region mgt south dmz and backup
+  - name: When mgt south dmz and bkp Exists
+    set_fact:
+      mgtmac: "{{facts.instance.hw_eth0.macaddress_dash}}"
+      southmac: "{{facts.instance.hw_eth1.macaddress_dash}}"
+      dmzmac: "{{facts.instance.hw_eth2.macaddress_dash}}"
+      bkpmac: "{{facts.instance.hw_eth3.macaddress_dash}}"
+      southmetric: 1
+      dmzmetric: 10
+      mgtmetric: 20
+      bkpmetric: 30
+    when: mgtip is defined and southip is defined and dmzip is defined and bkpip is defined
+  #endregion mgt south dmz and backup
+  #region mgt south backup
+  - name: When mgt south and bkp Exists
+    set_fact:
+      mgtmac: "{{facts.instance.hw_eth0.macaddress_dash}}"
+      southmac: "{{facts.instance.hw_eth1.macaddress_dash}}"
+      bkpmac: "{{facts.instance.hw_eth2.macaddress_dash}}"
+      mgtmetric: 10
+      bkpmetric: 20
+      southmetric: 1
+    when: mgtip is defined and southip is defined and dmzip is undefined and bkpip is defined
+  #endregion mgt south backup
+  #region south dmz and backup
+  - name: When south mgt and bkp Exists
+    set_fact:
+      southmac: "{{facts.instance.hw_eth0.macaddress_dash}}"
+      dmzmac: "{{facts.instance.hw_eth1.macaddress_dash}}"
+      bkpmac: "{{facts.instance.hw_eth2.macaddress_dash}}"
+      dmzmetric: 10
+      bkpmetric: 20
+      southmetric: 1
+    when: mgtip is undefined and southip is defined and dmzip is defined and bkpip is defined
+  #endregion south dmz and backup
+  #region south and backup
+  - name: When mgt south and bkp Exists
+    set_fact:
+      southmac: "{{facts.instance.hw_eth0.macaddress_dash}}"
+      bkpmac: "{{facts.instance.hw_eth1.macaddress_dash}}"
+      bkpmetric: 10
+      southmetric: 1
+    when: mgtip is undefined and southip is defined and dmzip is undefined and bkpip is defined
+  #endregion south and backup
+  #endregion Get Mac Addresses using Worldpay NiC logic
+  #region Set Nic IPs using Mac addresses detailed above
+  #region Set Network Card - MGT
+    #region Set Network Card - MGT - Name
+  - name:  Set Network Card - MGT - Name
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "$return = Get-NetAdapter | where {$_.macaddress -eq '{{mgtmac}}'} | Rename-NetAdapter -NewName 'mgt' -PassThru"
+    when: mgtmac is defined
+    async: 60
+    poll: 5
+    register: async_results
+
+  - name: testing
+    debug:
+      var: async_results
+    #endregion Set Network Card - MGT - Name
+    #region Set Network Card - MGT - IP
+  - name: Set Network Card - MGT - IP
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "if(Get-NetIPAddress -InterfaceAlias 'mgt' -IPAddress {{mgtip}} -PrefixLength {{mgtmask}}){$return =  Get-NetIPAddress -InterfaceAlias 'mgt' -IPAddress {{mgtip}} -PrefixLength {{mgtmask}}}Else{$return =  New-NetIPAddress -InterfaceAlias 'mgt' -IPAddress {{mgtip}} -PrefixLength {{mgtmask}}}"
+    when: mgtmac is defined
+    async: 60
+    poll: 5
+    #endregion Set Network Card - MGT - IP
+    #region Set Network Card - MGT - Binding Order
+  - name: Set Network Card - MGT - Binding Order
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "$return = Set-NetIPInterface -InterfaceAlias 'mgt' -InterfaceMetric {{mgtmetric}} -PassThru"
+    when: mgtmetric is defined
+    async: 60
+    poll: 5
+    #endregion Set Network Card - MGT - Binding Order
+    #region Set Network Card - MGT - DNS Suffix
+  - name: Set Network Card - MGT - DNS Suffix
+    include_role:
+      name: pwsh_vmware_shell
+    vars: 
+      pwsh_command: "$return = Set-DNSClient -InterfaceAlias 'mgt' -ConnectionSpecificSuffix mgt.{{domainsuffix}} -RegisterThisConnectionsAddress:$false -PassThru"
+    when: mgtmac is defined
+    async: 60
+    poll: 5
+    #endregion Set Network Card - MGT - DNS Suffix
+    #region Set Network Card - MGT - Routes
+  - name: Set Network Card - MGT - Routes
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+     pwsh_command: "$return = @(); @('10.175.192.0/18','10.192.192.0/18','10.167.192.0/18','10.183.192.0/18') | % {if(-not(Get-NetRoute -InterfaceAlias 'mgt' -DestinationPrefix $_ -NextHop {{mgtgate}})){$return += New-NetRoute -InterfaceAlias 'mgt' -DestinationPrefix $_ -NextHop {{mgtgate}}}else{$return += Get-NetRoute -InterfaceAlias 'mgt' -DestinationPrefix $_ -NextHop {{mgtgate}}}}"
+    when: mgtmac is defined
+    async: 60
+    poll: 5
+    #endregion Set Network Card - MGT - Routes 
+  #endregion Set Network Card - MGT
+  #region Set Network Card - South
+    #region Set Network Card - South - Name
+  - name: Set Network Card - South - Name
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "$return = Get-NetAdapter | where {$_.macaddress -eq '{{southmac}}'} | Rename-NetAdapter -NewName 'south' -PassThru"
+
+    when: southmac is defined
+    #endregion Set Network Card - South - Name
+    #region Set Network Card - South - IP
+  - name: Set Network Card - South - IP
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "if(Get-NetIPAddress -InterfaceAlias 'south' -IPAddress {{southip}} -PrefixLength {{southmask}}){$return =  Get-NetIPAddress -InterfaceAlias 'south' -IPAddress {{southip}} -PrefixLength {{southmask}}}Else{$return =  New-NetIPAddress -InterfaceAlias 'south' -IPAddress {{southip}} -PrefixLength {{southmask}}  -DefaultGateway {{southgate}}}"
+    when: southmac is defined
+    #endregion Set Network Card - South - IP
+    #region Set Network Card - South - Binding Order
+  - name: Set Network Card - South - Binding Order
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "$return = Set-NetIPInterface -InterfaceAlias 'south' -InterfaceMetric {{southmetric}} -PassThru"
+    when: southmetric is defined
+    #endregion Set Network Card - South - Binding Order
+    #region Set Network Card - South - DNS Client Server Address
+  - name: Set Network Card - South - DNS Client Server Address
+    include_role:
+      name: pwsh_vmware_shell
+    vars: 
+      pwsh_command: "$return = Set-DnsClientServerAddress -InterfaceAlias 'south' -ServerAddresses {{dnsservers}} -Passthru"
+
+    when: southmac is defined
+    #endregion Set Network Card - South - DNS Client Server Address
+    #region Set Network Card - South - Routes
+  - name: Set Network Card - South - Routes
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+     pwsh_command: "if(-not(Get-NetRoute -InterfaceAlias 'south' -DestinationPrefix 10.0.0.0/8 -NextHop {{southgate}})){$return = New-NetRoute -InterfaceAlias south -DestinationPrefix 10.0.0.0/8 -NextHop {{southgate}}}else{$return = Get-NetRoute -InterfaceAlias south -DestinationPrefix 10.0.0.0/8 -NextHop {{southgate}}}"
+     pwsh_wait: '60'
+    when: southmac is defined
+    #endregion Set Network Card - South - Routes 
+  #endregion Set Network Card - South
+  #region Set Network Card - DMZ
+  #region Set Network Card - DMZ - Name
+  - name: Set Network Card - DMZ - Name
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "$return = Get-NetAdapter | where {$_.macaddress -eq '{{dmzmac}}'} | Rename-NetAdapter -NewName 'north' -PassThru"
+
+    when: dmzmac is defined
+    #endregion Set Network Card - DMZ - Name
+    #region Set Network Card - DMZ - IP
+  - name: Set Network Card - DMZ - IP
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "if(Get-NetIPAddress -InterfaceAlias 'north' -IPAddress {{dmzip}} -PrefixLength {{dmzmask}}){$return =  Get-NetIPAddress -InterfaceAlias 'north' -IPAddress {{dmzip}} -PrefixLength {{dmzmask}}}Else{$return =  New-NetIPAddress -InterfaceAlias 'south' -IPAddress {{dmzip}} -PrefixLength {{dmzmask}} -DefaultGateway {{dmzgate}}}"
+    when: dmzmac is defined
+    #endregion Set Network Card - DMZ - IP
+    #region Set Network Card - DMZ - Binding Order
+  - name: Set Network Card - DMZ - Binding Order
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "$return = Set-NetIPInterface -InterfaceAlias 'north' -InterfaceMetric {{dmzmetric}} -PassThru"
+
+    when: dmzmetric is defined
+    #endregion Set Network Card - DMZ - Binding Order
+  #region Set Network Card - DMZ - DNS Suffix
+  - name: Set Network Card - DMZ - DNS Suffix
+    include_role:
+      name: pwsh_vmware_shell
+    vars: 
+      pwsh_command: "$return = Set-DNSClient -InterfaceAlias 'north' -ConnectionSpecificSuffix dmz.{{domainsuffix}} -RegisterThisConnectionsAddress:$false -PassThru"
+
+    when: dmzmac is defined
+    #endregion Set Network Card - DMZ - DNS Suffix
+  #endregion Set Network Card - DMZ
+  #region Set Network Card - Backup
+  #region Set Network Card - Backup - Name
+  - name: Set Network Card - Backup - Name
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "$return = Get-NetAdapter | where {$_.macaddress -eq '{{bkpmac}}'} | Rename-NetAdapter -NewName 'backup' -PassThru"
+
+    when: bkpmac is defined
+    #endregion Set Network Card - Backup - Name
+    #region Set Network Card - Backup - IP
+  - name: Set Network Card - Backup - IP
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "if(Get-NetIPAddress -InterfaceAlias 'backup' -IPAddress {{bkpip}} -PrefixLength {{bkpmask}}){$return =  Get-NetIPAddress -InterfaceAlias 'backup' -IPAddress {{bkpip}} -PrefixLength {{bkpmask}}}Else{$return =  New-NetIPAddress -InterfaceAlias 'backup' -IPAddress {{bkpip}} -PrefixLength {{bkpmask}}}"
+    when: bkpmac is defined
+    #endregion Set Network Card - Backup - IP
+    #region Set Network Card - Backup - Binding Order
+  - name: Set Network Card - Backup - Binding Order
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "$return = Set-NetIPInterface -InterfaceAlias 'backup' -InterfaceMetric {{bkpmetric}} -PassThru"
+
+    when: bpkmetric is defined
+    #endregion Set Network Card - Backup - Binding Order
+  #region Set Network Card - Backup - DNS Suffix
+  - name: Set Network Card - Backup - DNS Suffix
+    include_role:
+      name: pwsh_vmware_shell
+    vars: 
+      pwsh_command: "$return = Set-DNSClient -InterfaceAlias 'backup' -ConnectionSpecificSuffix bkp.{{domainsuffix}} -RegisterThisConnectionsAddress:$false -PassThru"
+
+    when: bkpmac is defined
+    #endregion Set Network Card - Backup - DNS Suffix
+  #endregion Set Network Card - Backup
+  #region Set All Network Cards - Disable Netbios
+  - name: Set All Network Cards - Disable Netbios
+    include_role:
+      name: pwsh_vmware_shell
+    vars:
+      pwsh_command: "Invoke-CimMethod -Query 'SELECT * FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled=1' -MethodName SetTcpipNetbios -Arguments @{TcpipNetbiosOptions=[uint32]2}"
+      #"Get-WmiObject Win32_NetworkAdapterConfiguration -filter \"ipenabled = 'true'\" | foreach-object {$_.SetTcpipNetbios(2)}"
+    #endregion Set All Network Cards - Disable Netbios
+
+
+  
+
+ #endregion Set Nic IPs using Mac addresses detailed above
+
+  # outstanding 
+  #setip address all
+  #disable netbios
+  
+
+
+  

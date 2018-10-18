@@ -1,0 +1,26 @@
+---
+- name: Remove Prestaged Domain Computer Object
+  hosts: all
+  gather_facts: no
+  tasks:
+
+  #connect directly to the domain controller add dns records
+
+  #region Check if computer already Exists in Domain
+  - name: Check is the Computer already exists in Domain
+    win_shell: "try{get-adcomputer -Identity {{computername}}} catch{}"
+    #when: '"PendingOpState" in json_q_p1'
+    register: getadcomputer_shell_result
+    ignore_errors: yes
+    #failed_when: getadcomputer_shell_result.rc != 0 or getadcomputer_shell_result.rc != 1
+  #endregion Check if computer already Exists in Domain
+
+  #Remove-ADComputer -Identity uk2tsnd10295 -Confirm:$false
+  #region Check if computer already Exists in Domain
+  - name: Check is the Computer already exists in Domain
+    win_shell: 'Remove-ADComputer -Identity {{computername}} -Confirm:$false'
+    #when: '"PendingOpState" in json_q_p1'
+    register: removeadcomputer_shell_result
+    ignore_errors: yes
+    when: getadcomputer_shell_result.rc == 0
+    #region Check if computer already Exists in Domain

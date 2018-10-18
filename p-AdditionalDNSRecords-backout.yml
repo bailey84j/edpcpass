@@ -1,0 +1,29 @@
+---
+- name: Remove Additional DNS Records
+  hosts: all
+  vars:
+    # it is suggested that these be encrypted with ansible-vault:
+    # ansible-vault edit group_vars/windows.yml
+  tasks:
+
+  #ipv4address: "10.174.47.100"
+  #ipmask: "24"
+  #zone:
+  #name:
+
+    #region Check if DNS Record Exists
+  - name: Check if DNS Record Exists
+    win_shell: "try{Get-DnsServerResourceRecord -Name {{name}} -ZoneName {{zone}}| convertto-json}catch{}"
+    register: getdnsserverresourcerecord_shell_result
+    ignore_errors: yes
+    #failed_when: getdnsserverzone_shell_result.rc != 0
+  #endregion Check if DNS Record Exists
+  
+    #region Create DNS Record
+  - name: Remove DNS Record
+    win_shell: "Remove-DnsServerResourceRecordA -Name '{{name}}' --RRType 'A' -ZoneName '{{zone}}'' -RecordData '{{ipv4address}}' -Confirm:$false -Force"
+    when: getdnsserverresourcerecord_shell_result.rc == 0
+    register: removednsserverresourcerecorda_shell_result
+    #ignore_errors: yes
+    #failed_when: getdnsserverzone_shell_result.rc != 0
+  #endregion Create DNS Record

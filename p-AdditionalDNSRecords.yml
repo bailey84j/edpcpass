@@ -1,0 +1,68 @@
+---
+- name: Create Additional DNS Records
+  hosts: all
+  vars:
+    # it is suggested that these be encrypted with ansible-vault:
+    # ansible-vault edit group_vars/windows.yml
+    ansible_ssh_port: 5985
+    ansible_winrm_kerberos_delegation: true
+    ansible_winrm_transport: basic
+    ansible_connection: winrm
+    ansible_ssh_user: 'worldpaytd\adm_baileyja625'
+    ansible_ssh_pass: 'London2012'
+    domain: 'worldpaytd'
+  tasks:
+
+  #connect directly to the domain controller add dns records
+
+
+  #ipv4address: "10.174.47.100"
+  #ipmask: "24"
+  #zone:
+  #name:
+
+  set_fact:
+  ptrzone: "{{ ipv4address.split('.')[2] }}.{{ ipv4address.split('.')[1] }}.{{ ipv4address.split('.')[0] }}.in-addr.arpa.dns"
+  networkid: "{{ ipv4address.split('.')[2] }}.{{ ipv4address.split('.')[1] }}.{{ ipv4address.split('.')[0] }}.0/{{ ipmask }}"
+
+
+  
+  #region Check if Reverse Lookup Zone Exists
+  - name: Check if Reverse Lookup Zone Exists
+    win_shell: "try{Get-DnsServerZone -Name {{ptrzone}} | convertto-json}catch{}"
+    register: getdnsserverzone_shell_result
+    ignore_errors: yes
+    #failed_when: getdnsserverzone_shell_result.rc != 0
+  #endregion Check if Reverse Lookup Zone Exists
+  
+    #region Create Reverse Lookup Zone
+  - name: Create Reverse Lookup Zone
+    win_shell: "Add-DnsServerPrimaryZone -DynamicUpdate Secure -NetworkId '{{networkid}}' -ReplicationScope Domain"
+    when: getdnsserverzone_shell_result.rc == 1
+    register: adddnsserverprimaryzone_shell_result
+    #ignore_errors: yes
+    #failed_when: getdnsserverzone_shell_result.rc != 0
+  #endregion Create Reverse Lookup Zone
+
+  #check if dns entry exists
+  #Get-DnsServerResourceRecord -Name jb-sql001 -ZoneName test-lab.local | convertto-json
+
+  #create if not
+  #Add-DnsServerResourceRecordA -Name "host23" -ZoneName "contoso.com" -IPv4Address "172.18.99.23" -CreatePTR -AllowUpdateAny
+  
+    #region Check if DNS Record Exists
+  - name: Check if DNS Record Exists
+    win_shell: "try{Get-DnsServerResourceRecord -Name {{name}} -ZoneName {{zone}}| convertto-json}catch{}"
+    register: getdnsserverresourcerecord_shell_result
+    ignore_errors: yes
+    #failed_when: getdnsserverzone_shell_result.rc != 0
+  #endregion Check if DNS Record Exists
+  
+    #region Create DNS Record
+  - name: Create DNS Record
+    win_shell: "Add-DnsServerResourceRecordA -Name '{{name}}' -ZoneName '{{zone}}'' -IPv4Address '{{ipv4address}}' -CreatePTR -AllowUpdateAny"
+    when: getdnsserverresourcerecord_shell_result.rc == 1
+    register: adddnsserverresourcerecorda_shell_result
+    #ignore_errors: yes
+    #failed_when: getdnsserverzone_shell_result.rc != 0
+  #endregion Create DNS Record
